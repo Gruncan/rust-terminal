@@ -1,9 +1,10 @@
+use std::fs::metadata;
 use std::process;
 
 use crate::terminal::Terminal;
 
 pub(crate) struct CommandWrapper {
-    name: String,
+    pub name: String,
     help: String,
     exec: Box<dyn CommandExecutor>,
 
@@ -14,8 +15,16 @@ impl CommandWrapper {
         CommandWrapper { name: String::from(name), help: String::from(help), exec }
     }
 
-    pub(crate) fn execute(&self, cmd_string_line: String, terminal: &mut Terminal) {
-        self.exec.execute(cmd_string_line.replace(&self.name, ""), terminal)
+    pub(crate) fn execute(&self, cmd_string_line: &str, terminal: &mut Terminal) -> bool {
+        let parsed_cmd_line = cmd_string_line.replace(&self.name, "");
+        let parsed_cmd_line = String::from(parsed_cmd_line.trim());
+        let parsed_cmd_option: Option<String>;
+        if parsed_cmd_line.is_empty() {
+            parsed_cmd_option = None;
+        } else {
+            parsed_cmd_option = Some(parsed_cmd_line);
+        }
+        self.exec.execute(parsed_cmd_option, terminal)
     }
 }
 
@@ -125,6 +134,25 @@ impl Command {
             _ => None,
         };
     }
+
+    pub fn from(c: &Command) -> Command {
+        match *c {
+            Command::ChangeDir => Command::ChangeDir,
+            Command::GetPath => Command::GetPath,
+            Command::SetPath => Command::SetPath,
+            Command::History => Command::History,
+            Command::LastCommand => Command::LastCommand,
+            Command::NCommand => Command::NCommand,
+            Command::NMinusCommand => Command::NMinusCommand,
+            Command::Alias => Command::Alias,
+            Command::Unalias => Command::Unalias,
+            Command::Exit => Command::Exit,
+        }
+    }
+
+    pub fn to_string(&self) -> String {
+        self.get_command().name
+    }
 }
 
 
@@ -149,66 +177,155 @@ struct UnAlias;
 struct Exit;
 
 pub(crate) trait CommandExecutor {
-    fn execute(&self, cmd_string_line: String, terminal: &mut Terminal);
+    fn execute(&self, cmd_string_line: Option<String>, terminal: &mut Terminal) -> bool;
+}
+
+fn is_valid_directory(dir: &str) -> bool {
+    metadata(dir).map(|metadata| metadata.is_dir()).unwrap_or(false)
 }
 
 impl CommandExecutor for ChangeDir {
-    fn execute(&self, cmd_string_line: String, terminal: &mut Terminal) {
-        println!("In change dir!");
+    fn execute(&self, cmd_string_line: Option<String>, terminal: &mut Terminal) -> bool {
+        // TODO make directory handling relative to current path
+        if let Some(directory) = cmd_string_line {
+            if is_valid_directory(directory.as_str()) {
+                terminal.working_dir = directory;
+                return true;
+            } else {
+                println!("Directory not valid!")
+            }
+        } else {
+            println!("Please input a path to change to.");
+        }
+        return false;
     }
 }
 
 impl CommandExecutor for GetPath {
-    fn execute(&self, cmd_string_line: String, terminal: &mut Terminal) {
-        println!("In get path!");
+    fn execute(&self, cmd_string_line: Option<String>, terminal: &mut Terminal) -> bool {
+        println!("{}", terminal.system_path);
+        return true;
     }
 }
 
 impl CommandExecutor for SetPath {
-    fn execute(&self, cmd_string_line: String, terminal: &mut Terminal) {
-        println!("In set path!");
+    fn execute(&self, cmd_string_line: Option<String>, terminal: &mut Terminal) -> bool {
+        if let Some(directory) = cmd_string_line {
+            if is_valid_directory(directory.as_str()) {
+                terminal.system_path = directory;
+                return true;
+            } else {
+                println!("Directory not valid!")
+            }
+        } else {
+            println!("Please a path to set.")
+        }
+        return false;
     }
 }
 
 impl CommandExecutor for History {
-    fn execute(&self, cmd_string_line: String, terminal: &mut Terminal) {
-        println!("In history")
+    fn execute(&self, cmd_string_line: Option<String>, terminal: &mut Terminal) -> bool {
+        let commands = terminal.get_history_commands();
+        if commands.is_empty() {
+            println!("There is no history!");
+        } else {
+            for (index, command) in commands.iter().enumerate() {
+                println!("{}. {}", index + 1, command.trim());
+            }
+        }
+        return true;
     }
 }
 
 impl CommandExecutor for LastCommand {
-    fn execute(&self, cmd_string_line: String, terminal: &mut Terminal) {
-        println!("In last command")
+    fn execute(&self, cmd_string_line: Option<String>, terminal: &mut Terminal) -> bool {
+        terminal.run_prev_command(1)
     }
 }
 
+fn nx_command_executor(cmd_string_line: Option<String>, terminal: &mut Terminal, go_back: bool) -> bool {
+    let mut multiply: i32 = 1;
+    if go_back {
+        multiply = -1;
+    }
+    return if let Some(number_str) = cmd_string_line {
+        return if let Ok(num) = number_str.parse::<i32>() {
+            terminal.run_prev_command(num * multiply)
+        } else {
+            println!("Failed to parse number!");
+            false
+        }
+    } else {
+        println!("Nothing to parse.");
+        false
+    }
+}
+
+
 impl CommandExecutor for NCommand {
-    fn execute(&self, cmd_string_line: String, terminal: &mut Terminal) {
-        println!("In n command")
+    fn execute(&self, cmd_string_line: Option<String>, terminal: &mut Terminal) -> bool {
+        return nx_command_executor(cmd_string_line, terminal, false);
     }
 }
 
 impl CommandExecutor for NMinusCommand {
-    fn execute(&self, cmd_string_line: String, terminal: &mut Terminal) {
-        println!("In n minus command")
+    fn execute(&self, cmd_string_line: Option<String>, terminal: &mut Terminal) -> bool {
+        return nx_command_executor(cmd_string_line, terminal, true);
     }
 }
 
 impl CommandExecutor for Alias {
-    fn execute(&self, cmd_string_line: String, terminal: &mut Terminal) {
-        println!("In alias")
+    fn execute(&self, cmd_string_line: Option<String>, terminal: &mut Terminal) -> bool {
+        if cmd_string_line.is_none() {
+            let aliases = terminal.get_aliases();
+            if aliases.is_empty() {
+                println!("No aliases set!");
+            } else {
+                for alias in terminal.get_aliases() {
+                    println!("{}", alias);
+                }
+                return true;
+            }
+        } else {
+            let cmd_string_line = cmd_string_line.unwrap();
+            let alias_line: Vec<String> = cmd_string_line.splitn(3, " ").map(|v| String::from(v)).collect();
+            if alias_line.len() >= 2 {
+                let name = alias_line.get(0).unwrap();
+                let command = alias_line.get(1).unwrap();
+                let command_option = Command::get_command_enum(command.as_str());
+                if command_option.is_none() {
+                    println!("Unknown command {} trying to be set as an alias", command);
+                    return false;
+                } else if terminal.is_alias_present(name) {
+                    println!("This alias is already been set.");
+                }
+
+                if alias_line.len() == 2 { // no args
+                    terminal.add_alias(String::from(name), command_option.unwrap(), None);
+                } else { // Args
+                    let arguments = alias_line.get(3).unwrap();
+                    terminal.add_alias(String::from(name), command_option.unwrap(), Some(String::from(arguments)))
+                }
+                return true;
+            } else {
+                println!("Set aliases with> alias <name> <command>")
+            }
+        }
+        return false;
     }
 }
 
 impl CommandExecutor for UnAlias {
-    fn execute(&self, cmd_string_line: String, terminal: &mut Terminal) {
-        println!("In unalias")
+    fn execute(&self, cmd_string_line: Option<String>, terminal: &mut Terminal) -> bool {
+        println!("In unalias");
+        return true;
     }
 }
 
 impl CommandExecutor for Exit {
-    fn execute(&self, cmd_string_line: String, terminal: &mut Terminal) {
-        println!("In exit!");
+    fn execute(&self, cmd_string_line: Option<String>, terminal: &mut Terminal) -> bool {
+        println!("Goodbye!");
         process::exit(0);
     }
 }

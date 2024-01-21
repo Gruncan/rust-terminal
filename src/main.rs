@@ -46,12 +46,11 @@ fn main() {
     let hd = get_current_home_directory();
     let mut terminal: Terminal;
 
-    if let Some(home_dir) = hd {
-        terminal = Terminal::new(home_dir);
-    } else if let Some(current_work_dir) = cwd {
-        terminal = Terminal::new(current_work_dir);
+    if hd.is_some() && cwd.is_some() {
+        terminal = Terminal::new(hd.unwrap(), cwd.unwrap());
     } else {
         eprintln!("Failed to initialize a terminal instance!");
+        eprintln!("Home or working directory not set.");
         return;
     }
 
@@ -60,24 +59,20 @@ fn main() {
 
     loop {
         let mut user_input = String::new();
-        print!("> ");
+        print!("({}) > ", terminal.working_dir);
         io::stdout().flush().expect("Failed to flush output");
         io::stdin().read_line(&mut user_input).expect("Failed to read user input");
         let cmd_option: Option<(Command, String)> = parse_user_input(user_input);
-        if let Some((command, user_input)) = cmd_option {
-            let command_wrapper = command.get_command();
-            command_wrapper.execute(user_input, &mut terminal);
-        } else {
-            eprintln!("Unknown command, try again.")
-        }
+        Terminal::run_command(cmd_option, &mut terminal);
     }
 }
 
+// TODO move into terminal struct to handle aliases
 fn parse_user_input(user_input: String) -> Option<(Command, String)> {
     let split_user_input: Vec<String> = user_input.split(" ").map(|v| String::from(v)).collect();
     if let Some(string_command) = split_user_input.first() {
         // Correctly handle command if statement order matters
-        let cmd_option: Option<Command> = if string_command == "!!" {
+        let cmd_option: Option<Command> = if string_command.starts_with("!!") {
             Command::get_command_enum("!!")
         } else if string_command.starts_with("!-") {
             Command::get_command_enum("!-")
