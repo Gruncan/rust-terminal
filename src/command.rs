@@ -43,6 +43,14 @@ pub(crate) enum Command {
     Exit,
 }
 
+impl PartialEq<Self> for Command {
+    fn eq(&self, other: &Self) -> bool {
+        self.to_string() == other.to_string()
+    }
+}
+
+impl Eq for Command {}
+
 impl Command {
     fn change_dir_command() -> CommandWrapper {
         CommandWrapper::new("cd",
@@ -278,15 +286,15 @@ impl CommandExecutor for NMinusCommand {
 impl CommandExecutor for Alias {
     fn execute(&self, cmd_string_line: Option<String>, terminal: &mut Terminal) -> bool {
         if cmd_string_line.is_none() {
-            let aliases = terminal.get_aliases();
+            let aliases = terminal.get_aliases_string();
             if aliases.is_empty() {
                 println!("No aliases set!");
             } else {
-                for alias in terminal.get_aliases() {
+                for alias in terminal.get_aliases_string() {
                     println!("{}", alias);
                 }
-                return true;
             }
+            return true
         } else {
             let cmd_string_line = cmd_string_line.unwrap();
             let alias_line: Vec<String> = cmd_string_line.splitn(3, " ").map(|v| String::from(v)).collect();
@@ -295,7 +303,7 @@ impl CommandExecutor for Alias {
                 let command = alias_line.get(1).unwrap();
                 let command_option = Command::get_command_enum(command.as_str());
                 if command_option.is_none() {
-                    println!("Unknown command {} trying to be set as an alias", command);
+                    println!("Unknown command \"{}\" trying to be set as an alias", command);
                     return false;
                 } else if terminal.is_alias_present(name) {
                     println!("This alias is already been set.");
@@ -304,12 +312,12 @@ impl CommandExecutor for Alias {
                 if alias_line.len() == 2 { // no args
                     terminal.add_alias(String::from(name), command_option.unwrap(), None);
                 } else { // Args
-                    let arguments = alias_line.get(3).unwrap();
+                    let arguments = alias_line.get(2).unwrap();
                     terminal.add_alias(String::from(name), command_option.unwrap(), Some(String::from(arguments)))
                 }
                 return true;
             } else {
-                println!("Set aliases with> alias <name> <command>")
+                println!("Set aliases with: > alias <name> <command>")
             }
         }
         return false;
@@ -318,8 +326,28 @@ impl CommandExecutor for Alias {
 
 impl CommandExecutor for UnAlias {
     fn execute(&self, cmd_string_line: Option<String>, terminal: &mut Terminal) -> bool {
-        println!("In unalias");
-        return true;
+        return if cmd_string_line.is_none() {
+            println!("Unset an alias with: > unalias <command> ");
+            false
+        } else {
+            let cmd_string_line = cmd_string_line.unwrap();
+            let command_option: Option<(Command, String)> = terminal.parse_user_input(cmd_string_line);
+            return if let Some((command, _)) = command_option {
+                let aliases_removed: Vec<String> = terminal.remove_command_aliases(command);
+                if aliases_removed.is_empty() {
+                    println!("There are no aliases associated with that command.")
+                } else {
+                    println!("Removed the following aliases:");
+                    for alias in &aliases_removed {
+                        println!(" - \"{}\"", alias)
+                    }
+                }
+                true
+            } else {
+                println!("That is not a valid command!");
+                false
+            };
+        };
     }
 }
 

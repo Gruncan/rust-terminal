@@ -62,34 +62,12 @@ fn main() {
         print!("({}) > ", terminal.working_dir);
         io::stdout().flush().expect("Failed to flush output");
         io::stdin().read_line(&mut user_input).expect("Failed to read user input");
-        let cmd_option: Option<(Command, String)> = parse_user_input(user_input);
-        Terminal::run_command(cmd_option, &mut terminal);
+        let cmd_option: Option<(Command, String)> = terminal.parse_user_input(user_input);
+        terminal.run_command(cmd_option);
     }
 }
 
-// TODO move into terminal struct to handle aliases
-fn parse_user_input(user_input: String) -> Option<(Command, String)> {
-    let split_user_input: Vec<String> = user_input.split(" ").map(|v| String::from(v)).collect();
-    if let Some(string_command) = split_user_input.first() {
-        // Correctly handle command if statement order matters
-        let cmd_option: Option<Command> = if string_command.starts_with("!!") {
-            Command::get_command_enum("!!")
-        } else if string_command.starts_with("!-") {
-            Command::get_command_enum("!-")
-        } else if string_command.starts_with("!") {
-            Command::get_command_enum("!")
-        } else {
-            Command::get_command_enum(string_command.trim())
-        };
-        return if let Some(command) = cmd_option {
-            Some((command, user_input))
-        } else {
-            None
-        };
-    }
 
-    return None;
-}
 
 
 fn startup_util() {
